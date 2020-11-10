@@ -37,13 +37,49 @@ week_10 <- kenya %>%
 
 * Fit the same stan_glm() model which we used on Thursday: `reg_chg` as a function of `treatment`, `poverty_n` and their interaction. Look at the results. 
 
+```{r}
+
+fit1 <- stan_glm(reg_chg ~ treatment + poverty_n + poverty_n:treatment, 
+         data = week_10,
+         refresh = 0)
+
+print(fit1, digits = 4)
+
+rmse(ames_test_res, truth = Sale_Price, estimate = .pred)
+
+```
+
+error is diff between our fitted values and acutal value s
+
 * The root mean square error (also known as RMSE or rmse) is the most common measure for how well a models fits the data. It is the square root of the average of the sum of the residuals squared. (Recall that the residual is defined as the true value minus the fitted value.) Calculate the RMSE by hand. (Hint: Use the `predict()` function with the fitted model object. This will give you the fitted values. Once you have the residual, you just square them, take the sum, and then take the square root of the sum.)
+
+
+```{r}
+
+try <- predict(fit1)
+
+try %>%
+  as.tibble() %>%
+  mutate(truth = week_10$reg_chg, forecast = predict(fit1)) %>%
+  mutate(sq_diff = (truth - forecast) ^2) %>%
+  summarize(rmse = sqrt(mean(sq_diff)))
+  
+# square root mean between average squared fdfiference between predicted value and real value is .04
+
+```
+
+
 
 * Write a sentence or two describing a situation in which RMSE would not be a good metric for choosing among models.
 
+if there are outliers, they can cause significant skewedness, thereby suggesting that the model is a lot worse than it actually is
+when you think outliers are really gouing to affect your model because wwith rmse, you squaring you are upping the error
+
 * Write a sentence interpreting sigma. (Recall that, in the Bayesian/stan_glm() framework, sigma is just another parameter, and that the fitted model provides us with an estimated posterior for it.)
 
+Sigma is the error term (difference between the actual value and the estimated value of a parameter)
 
+the median of the posterior distribution for the root mean squared error for the stan_glm model (so 4000 models). this is teh standard deviation of that posterior distribution 
 
 
 ## Scene 2
@@ -55,7 +91,34 @@ week_10 <- kenya %>%
 * Calculate RMSE using the metrics() argument.
 
 
+```{r}
+fit_2 <- workflow() %>%
+  add_recipe(recipe(reg_chg ~ treatment + poverty_n, 
+                    data = week_10)) %>%
+  step_interact(~ treatment * poverty_n) %>%
+  add_model(linear_reg() %>% 
+              set_engine("stan"))
+```
 
+
+
+```{r}
+# By hand
+fit_2 %>%
+  fit(data = week_10) %>%
+  predict(week_10) %>%
+  bind_cols(week_10 %>% select(reg_chg)) %>% 
+  mutate(sq_diff = (.pred - reg_chg) ^ 2) %>%
+  summarize(rmse = sqrt(mean(sq_diff)))
+# Using metrics function
+
+fit_2 %>%
+  fit(data = week_10) %>%
+  predict(week_10) %>%
+  bind_cols(week_10 %>% select(reg_chg)) %>% 
+  metrics(truth = reg_chg, estimate = `.pred`)
+
+```
 ## Scene 3
 
 **Prompt:** The key problem with this analysis is that we have used the same data to *fit* the model as we are using to *evaluate* the model. This is very, very dangerous. We don't really care how well the model works on data we have already seen. We have the data itself! We care about the future, when we don't know the answer already. *The main purpose of tidymodels is to make it easy to estimate how well our model will work in the future.*
@@ -68,5 +131,33 @@ week_10 <- kenya %>%
 
 
 
+```{r}
+set.seed(10)
+week10_split <- initial_split(week_10, prob = 0.80)
+week10_train <- training(week10_split)
+week10_test  <- testing(week10_split)
+# 10 folds (samples)
+
+week10_folds <- vfold_cv(week10_train, v = 10)
+fit_2 %>%
+  fit_resamples(resamples = week10_folds,
+                control = control_resamples(save_pred = TRUE)) %>%
+  collect_metrics()
+
+## get a sense of how well this data is going to predict our real data set 
+```
+idea is that splitting is happening randomly, but with seed, we dst it to be the same thing veyr time  
+
+can compare rmse if we were to fit the workflow from fit2 to week10 dataset. doing this on the test dataset
+
+```{r}
+
+stan_wfl %>%
+  fit(data = week10_train) %>%
+predict(new_data = week10_test) %>%
+  bind_cols(week10_test %>% select(reg_chg))
+
+
+```
 
 
